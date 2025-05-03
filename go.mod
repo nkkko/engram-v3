@@ -10,7 +10,7 @@ require (
 	github.com/linxGnu/grocksdb v1.8.12
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/prometheus/client_golang v1.18.0
-	github.com/rs/zerolog v1.32.0
+	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.8.4
 	go.opentelemetry.io/otel v1.23.1
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.23.1
@@ -22,5 +22,8 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 )

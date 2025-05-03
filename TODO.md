@@ -34,7 +34,7 @@
 - [x] Implement basic storage tests
 - [x] Implement simple validation tests
 - [x] Run the validation tests successfully
-- [ ] Implement router tests
+- [x] Implement router tests
 - [ ] Implement lock manager tests
 - [ ] Implement API tests
 - [ ] Implement end-to-end tests

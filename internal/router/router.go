@@ -2,10 +2,13 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nkkko/engram-v3/pkg/proto"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -37,7 +40,7 @@ type Router struct {
 	subscriptions map[string]*Subscription
 	contextSubs  map[string]map[string]struct{} // contextID -> set of subscription IDs
 	mu           sync.RWMutex
-	logger       *log.Logger
+	logger       zerolog.Logger
 }
 
 // NewRouter creates a new event router
@@ -55,7 +58,7 @@ func NewRouter(config ...Config) *Router {
 		config:       cfg,
 		subscriptions: make(map[string]*Subscription),
 		contextSubs:  make(map[string]map[string]struct{}),
-		logger:       &logger,
+		logger:       logger,
 	}
 }
 
@@ -288,7 +291,8 @@ func (r *Router) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// generateID creates a unique subscription ID
-func generateID() string {
+// Variable for generating unique subscription IDs
+// Can be replaced in tests for deterministic behavior
+var generateID = func() string {
 	return uuid.NewString()
 }

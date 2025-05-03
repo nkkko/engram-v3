@@ -1,8 +1,6 @@
 package proto
 
 import (
-	"time"
-
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
