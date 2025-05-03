@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nkkko/engram-v3/internal/storage"
 	"github.com/nkkko/engram-v3/pkg/proto"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -31,17 +31,23 @@ func DefaultConfig() Config {
 	}
 }
 
+// StorageInterface defines the storage operations needed by the lock manager
+type StorageInterface interface {
+	AcquireLock(ctx context.Context, req *proto.AcquireLockRequest) (*proto.AcquireLockResponse, error)
+	ReleaseLock(ctx context.Context, req *proto.ReleaseLockRequest) (*proto.ReleaseLockResponse, error)
+}
+
 // LockManager handles resource locking and concurrency control
 type LockManager struct {
 	config  Config
-	storage *storage.Storage
+	storage StorageInterface
 	locks   map[string]*proto.LockHandle
 	mu      sync.RWMutex
-	logger  *log.Logger
+	logger  zerolog.Logger
 }
 
 // NewLockManager creates a new lock manager
-func NewLockManager(config Config, storage *storage.Storage) *LockManager {
+func NewLockManager(config Config, storage StorageInterface) *LockManager {
 	logger := log.With().Str("component", "lockmanager").Logger()
 
 	if config.DefaultTTL == 0 {
@@ -56,7 +62,7 @@ func NewLockManager(config Config, storage *storage.Storage) *LockManager {
 		config:  config,
 		storage: storage,
 		locks:   make(map[string]*proto.LockHandle),
-		logger:  &logger,
+		logger:  logger,
 	}
 }
 

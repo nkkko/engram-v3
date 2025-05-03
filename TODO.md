@@ -35,7 +35,7 @@
 - [x] Implement simple validation tests
 - [x] Run the validation tests successfully
 - [x] Implement router tests
-- [ ] Implement lock manager tests
+- [x] Implement lock manager tests
 - [ ] Implement API tests
 - [ ] Implement end-to-end tests
 - [ ] Perform benchmark tests (1ms target for work unit creation)

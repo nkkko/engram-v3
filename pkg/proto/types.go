@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"fmt"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -165,4 +166,19 @@ type SearchRequest struct {
 type SearchResponse struct {
 	UnitIds      []string `json:"unit_ids"`
 	TotalResults int32    `json:"total_results"`
+}
+
+// Error wraps an error message for consistent error handling
+type Error struct {
+	Message string
+}
+
+// NewError creates a new Error
+func NewError(msg string) error {
+	return &Error{Message: msg}
+}
+
+// Error implements the error interface
+func (e *Error) Error() string {
+	return fmt.Sprintf("engram: %s", e.Message)
 }
