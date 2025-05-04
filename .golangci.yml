@@ -1,0 +1,53 @@
+run:
+  timeout: 5m
+  tests: true
+  skip-dirs:
+    - vendor
+    - third_party
+
+linters:
+  enable:
+    - deadcode
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - structcheck
+    - typecheck
+    - unused
+    - varcheck
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - goconst
+    - gosec
+    - revive
+
+linters-settings:
+  govet:
+    check-shadowing: true
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/nkkko/engram-v3
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - disableStutteringCheck
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - dupl
+        - gosec
+    - text: "weak cryptographic primitive"
+      linters:
+        - gosec
+  max-same-issues: 10

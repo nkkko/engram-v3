@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -17,10 +16,9 @@ import (
 	"github.com/nkkko/engram-v3/internal/storage"
 	"github.com/nkkko/engram-v3/pkg/proto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
 
 // Config contains API configuration
@@ -36,20 +34,20 @@ func DefaultConfig() Config {
 	}
 }
 
-// API handles HTTP and gRPC endpoints
+// API handles HTTP endpoints
 type API struct {
 	config      Config
 	app         *fiber.App
-	storage     *storage.Storage
+	storage     storage.Storage
 	router      *router.Router
 	notifier    *notifier.Notifier
 	lockManager *lockmanager.LockManager
 	search      *search.Search
-	logger      *log.Logger
+	logger      zerolog.Logger
 }
 
 // NewAPI creates a new API instance
-func NewAPI(config Config, storage *storage.Storage, router *router.Router, notifier *notifier.Notifier, lockManager *lockmanager.LockManager, search *search.Search) *API {
+func NewAPI(config Config, storage storage.Storage, router *router.Router, notifier *notifier.Notifier, lockManager *lockmanager.LockManager, search *search.Search) *API {
 	logger := log.With().Str("component", "api").Logger()
 
 	if config.Addr == "" {
@@ -63,7 +61,7 @@ func NewAPI(config Config, storage *storage.Storage, router *router.Router, noti
 		notifier:    notifier,
 		lockManager: lockManager,
 		search:      search,
-		logger:      &logger,
+		logger:      logger,
 	}
 }
 
@@ -86,10 +84,6 @@ func (a *API) Start(ctx context.Context) error {
 
 	// Register routes
 	a.registerRoutes(app)
-
-	// Register WebSocket and SSE handlers
-	a.notifier.RegisterWebSocketHandler(app)
-	a.notifier.RegisterSSEHandler(app)
 
 	// Store app reference
 	a.app = app
@@ -144,32 +138,12 @@ func (a *API) registerRoutes(app *fiber.App) {
 
 // handleCreateWorkUnit creates a new work unit
 func (a *API) handleCreateWorkUnit(c *fiber.Ctx) error {
-	start := time.Now()
-
 	// Parse request
 	var req proto.CreateWorkUnitRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body",
 		})
-	}
-
-	// Validate request
-	if req.ContextId == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Context ID is required",
-		})
-	}
-
-	if req.AgentId == "" {
-		// Extract agent ID from authentication header
-		agentID := c.Get("X-Agent-ID")
-		if agentID == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": "Agent ID is required",
-			})
-		}
-		req.AgentId = agentID
 	}
 
 	// Create work unit
@@ -180,14 +154,6 @@ func (a *API) handleCreateWorkUnit(c *fiber.Ctx) error {
 			"error": "Failed to create work unit",
 		})
 	}
-
-	// Log latency
-	latency := time.Since(start)
-	a.logger.Debug().
-		Str("work_unit_id", workUnit.Id).
-		Str("context_id", workUnit.ContextId).
-		Dur("latency_ms", latency).
-		Msg("Work unit created")
 
 	// Return response
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
@@ -328,24 +294,6 @@ func (a *API) handleAcquireLock(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validate request
-	if req.ResourcePath == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Resource path is required",
-		})
-	}
-
-	if req.AgentID == "" {
-		// Extract agent ID from authentication header
-		agentID := c.Get("X-Agent-ID")
-		if agentID == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": "Agent ID is required",
-			})
-		}
-		req.AgentID = agentID
-	}
-
 	// Set default TTL if not provided
 	if req.TTLSeconds <= 0 {
 		req.TTLSeconds = 60 // 1 minute default
@@ -377,18 +325,7 @@ func (a *API) handleReleaseLock(c *fiber.Ctx) error {
 
 	// Extract agent ID and lock ID from request
 	agentID := c.Get("X-Agent-ID", c.Query("agent_id"))
-	if agentID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Agent ID is required",
-		})
-	}
-
 	lockID := c.Query("lock_id")
-	if lockID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Lock ID is required",
-		})
-	}
 
 	// Release lock
 	released, err := a.lockManager.ReleaseLock(c.Context(), resourcePath, agentID, lockID)
@@ -460,9 +397,11 @@ func (a *API) handleSearch(c *fiber.Ctx) error {
 	// Convert types to enum values
 	var types []proto.WorkUnitType
 	for _, typeStr := range req.Types {
-		typeEnum, ok := proto.WorkUnitType_value[typeStr]
-		if ok {
-			types = append(types, proto.WorkUnitType(typeEnum))
+		switch typeStr {
+		case "MESSAGE":
+			types = append(types, proto.WorkUnitType_MESSAGE)
+		case "SYSTEM":
+			types = append(types, proto.WorkUnitType_SYSTEM)
 		}
 	}
 
@@ -477,10 +416,10 @@ func (a *API) handleSearch(c *fiber.Ctx) error {
 
 	// Return response
 	return c.JSON(fiber.Map{
-		"results":      results,
-		"total_count":  totalCount,
-		"limit":        req.Limit,
-		"offset":       req.Offset,
+		"results":     results,
+		"total_count": totalCount,
+		"limit":       req.Limit,
+		"offset":      req.Offset,
 	})
 }
 

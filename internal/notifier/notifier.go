@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,58 +10,90 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/websocket/v2"
+	"github.com/google/uuid"
+	"github.com/nkkko/engram-v3/internal/metrics"
 	"github.com/nkkko/engram-v3/internal/router"
 	"github.com/nkkko/engram-v3/pkg/proto"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Config contains notifier configuration
 type Config struct {
 	// Maximum idle time before dropping a connection
 	MaxIdleTime time.Duration
+	
+	// Broadcast buffer size for batching events
+	BroadcastBufferSize int
+	
+	// Flush interval for broadcast buffer
+	BroadcastFlushInterval time.Duration
 }
 
 // DefaultConfig returns a default configuration
 func DefaultConfig() Config {
 	return Config{
-		MaxIdleTime: 30 * time.Second,
+		MaxIdleTime:            30 * time.Second,
+		BroadcastBufferSize:    200,
+		BroadcastFlushInterval: 50 * time.Millisecond,
 	}
 }
 
 // Client represents a connected client
 type Client struct {
 	ID           string
-	Subscription *router.Subscription
+	ContextIDs   []string             // Contexts the client is subscribed to
 	LastActive   time.Time
 	conn         *websocket.Conn
 	sseChannel   chan []byte
+	eventsChannel chan *proto.WorkUnit // Channel for receiving events
 	isSSE        bool
 	mu           sync.Mutex
 }
 
 // Notifier handles real-time notifications to clients
 type Notifier struct {
-	config       Config
-	clients      map[string]*Client
-	mu           sync.RWMutex
-	logger       *log.Logger
+	config            Config
+	clients           map[string]*Client
+	mu                sync.RWMutex
+	logger            zerolog.Logger
 	heartbeatInterval time.Duration
+	router            *router.Router
+	broadcastBuffer   *BroadcastBuffer
+	metrics           *metrics.Metrics
 }
 
 // NewNotifier creates a new notification manager
-func NewNotifier(config Config) *Notifier {
+func NewNotifier(config Config, r *router.Router) *Notifier {
 	logger := log.With().Str("component", "notifier").Logger()
 
+	// Apply default configuration values if not provided
 	if config.MaxIdleTime == 0 {
 		config.MaxIdleTime = DefaultConfig().MaxIdleTime
 	}
+	
+	if config.BroadcastBufferSize == 0 {
+		config.BroadcastBufferSize = DefaultConfig().BroadcastBufferSize
+	}
+	
+	if config.BroadcastFlushInterval == 0 {
+		config.BroadcastFlushInterval = DefaultConfig().BroadcastFlushInterval
+	}
+	
+	// Create broadcast buffer
+	broadcastBuffer := NewBroadcastBuffer(
+		config.BroadcastBufferSize,
+		config.BroadcastFlushInterval,
+	)
 
 	return &Notifier{
 		config:            config,
 		clients:           make(map[string]*Client),
-		logger:            &logger,
+		logger:            logger,
 		heartbeatInterval: 5 * time.Second,
+		router:            r,
+		broadcastBuffer:   broadcastBuffer,
+		metrics:           metrics.GetMetrics(),
 	}
 }
 
@@ -68,8 +101,11 @@ func NewNotifier(config Config) *Notifier {
 func (n *Notifier) Start(ctx context.Context, subscription *router.Subscription) error {
 	n.logger.Info().Msg("Starting event notifier")
 
-	// Process events from router
+	// Process events from router through broadcast buffer
 	go func() {
+		count := 0
+		start := time.Now()
+		
 		for {
 			select {
 			case event, ok := <-subscription.Events:
@@ -77,7 +113,24 @@ func (n *Notifier) Start(ctx context.Context, subscription *router.Subscription)
 					n.logger.Info().Msg("Subscription channel closed, stopping notifier")
 					return
 				}
-				n.broadcastEvent(event)
+				
+				// Publish to broadcast buffer
+				n.broadcastBuffer.Publish(event)
+				
+				// Update metrics
+				count++
+				if count >= 1000 {
+					elapsed := time.Since(start).Seconds()
+					throughput := float64(count) / elapsed
+					n.metrics.RouterEventsTotal.WithLabelValues("processed").Add(float64(count))
+					n.logger.Debug().
+						Float64("events_per_second", throughput).
+						Int("events", count).
+						Float64("elapsed_seconds", elapsed).
+						Msg("Event processing throughput")
+					count = 0
+					start = time.Now()
+				}
 
 			case <-ctx.Done():
 				n.logger.Info().Msg("Context canceled, stopping notifier")
@@ -142,8 +195,8 @@ func (n *Notifier) RegisterSSEHandler(app *fiber.App) {
 		client := n.createSSEClient(contextID)
 		
 		// Send initial connection message
-		c.Write("event: connected\ndata: {\"client_id\":\"" + client.ID + "\"}\n\n")
-		c.Flush()
+		connMsg := fmt.Sprintf("event: connected\ndata: {\"client_id\":\"%s\"}\n\n", client.ID)
+		_, _ = c.WriteString(connMsg)
 		
 		// Handle client disconnect
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
@@ -180,13 +233,16 @@ func (n *Notifier) RegisterSSEHandler(app *fiber.App) {
 func (n *Notifier) handleWebSocketClient(conn *websocket.Conn, contextID string) {
 	// Create client
 	clientID := generateID()
-	subscription := router.Subscribe(contextID)
+	
+	// Create events channel and subscribe to broadcast buffer
+	eventsChannel := n.broadcastBuffer.Subscribe(clientID, 100)
 	
 	client := &Client{
 		ID:           clientID,
-		Subscription: subscription,
+		ContextIDs:   []string{contextID},
 		LastActive:   time.Now(),
 		conn:         conn,
+		eventsChannel: eventsChannel,
 		isSSE:        false,
 	}
 	
@@ -220,9 +276,22 @@ func (n *Notifier) handleWebSocketClient(conn *websocket.Conn, contextID string)
 	
 	// Send events to client
 	go func() {
-		for event := range subscription.Events {
+		for event := range eventsChannel {
+			// Check if this event is for one of the client's contexts
+			isRelevant := false
+			for _, cid := range client.ContextIDs {
+				if event.ContextId == cid {
+					isRelevant = true
+					break
+				}
+			}
+			
+			if !isRelevant {
+				continue
+			}
+			
 			// Convert event to JSON
-			jsonData, err := protojson.Marshal(event)
+			jsonData, err := json.Marshal(event)
 			if err != nil {
 				n.logger.Error().Err(err).Str("client_id", clientID).Msg("Failed to marshal event")
 				continue
@@ -233,6 +302,9 @@ func (n *Notifier) handleWebSocketClient(conn *websocket.Conn, contextID string)
 				n.logger.Debug().Err(err).Str("client_id", clientID).Msg("WebSocket write error")
 				break
 			}
+			
+			// Track event delivery metrics
+			n.metrics.NotifierEventsPublished.WithLabelValues("websocket").Inc()
 		}
 	}()
 }
@@ -241,13 +313,16 @@ func (n *Notifier) handleWebSocketClient(conn *websocket.Conn, contextID string)
 func (n *Notifier) createSSEClient(contextID string) *Client {
 	// Create client
 	clientID := generateID()
-	subscription := router.Subscribe(contextID)
+	
+	// Create events channel and subscribe to broadcast buffer
+	eventsChannel := n.broadcastBuffer.Subscribe(clientID, 100)
 	
 	client := &Client{
 		ID:           clientID,
-		Subscription: subscription,
+		ContextIDs:   []string{contextID},
 		LastActive:   time.Now(),
 		sseChannel:   make(chan []byte, 100),
+		eventsChannel: eventsChannel,
 		isSSE:        true,
 	}
 	
@@ -258,9 +333,22 @@ func (n *Notifier) createSSEClient(contextID string) *Client {
 	
 	// Process events and send to client
 	go func() {
-		for event := range subscription.Events {
+		for event := range eventsChannel {
+			// Check if this event is for one of the client's contexts
+			isRelevant := false
+			for _, cid := range client.ContextIDs {
+				if event.ContextId == cid {
+					isRelevant = true
+					break
+				}
+			}
+			
+			if !isRelevant {
+				continue
+			}
+			
 			// Convert event to JSON
-			jsonData, err := protojson.Marshal(event)
+			jsonData, err := json.Marshal(event)
 			if err != nil {
 				n.logger.Error().Err(err).Str("client_id", clientID).Msg("Failed to marshal event")
 				continue
@@ -270,6 +358,7 @@ func (n *Notifier) createSSEClient(contextID string) *Client {
 			select {
 			case client.sseChannel <- jsonData:
 				// Successfully sent
+				n.metrics.NotifierEventsPublished.WithLabelValues("sse").Inc()
 			default:
 				// Channel buffer full, log warning
 				n.logger.Warn().Str("client_id", clientID).Msg("SSE channel buffer full, dropping event")
@@ -294,9 +383,16 @@ func (n *Notifier) processClientMessage(client *Client, message []byte) {
 	
 	switch request.Action {
 	case "subscribe":
-		// Update subscription contexts
+		// Update client's context IDs
 		if len(request.ContextIDs) > 0 {
-			router.UpdateSubscription(client.Subscription.ID, request.ContextIDs...)
+			client.mu.Lock()
+			client.ContextIDs = request.ContextIDs
+			client.mu.Unlock()
+			
+			n.logger.Debug().
+				Str("client_id", client.ID).
+				Strs("context_ids", request.ContextIDs).
+				Msg("Client updated subscription contexts")
 		}
 		
 	case "ping":
@@ -312,8 +408,8 @@ func (n *Notifier) processClientMessage(client *Client, message []byte) {
 
 // broadcastEvent sends an event to all interested clients
 func (n *Notifier) broadcastEvent(event *proto.WorkUnit) {
-	// Events are automatically distributed through subscriptions
-	// No additional action needed here as the router handles distribution
+	// Publish to the broadcast buffer for zero-copy distribution
+	n.broadcastBuffer.Publish(event)
 }
 
 // removeClient removes a client
@@ -333,8 +429,11 @@ func (n *Notifier) removeClient(clientID string) {
 		client.conn.Close()
 	}
 	
-	// Unsubscribe from router
-	router.Unsubscribe(client.Subscription.ID)
+	// Unsubscribe from broadcast buffer
+	n.broadcastBuffer.Unsubscribe(clientID)
+	
+	// Update metrics
+	n.metrics.NotifierConnectionsActive.Dec()
 	
 	// Remove from clients map
 	delete(n.clients, clientID)
@@ -418,6 +517,13 @@ func (n *Notifier) sendHeartbeats(ctx context.Context) {
 func (n *Notifier) Shutdown(ctx context.Context) error {
 	n.logger.Info().Msg("Shutting down notifier")
 	
+	// Close broadcast buffer
+	if n.broadcastBuffer != nil {
+		if err := n.broadcastBuffer.Close(); err != nil {
+			n.logger.Error().Err(err).Msg("Error closing broadcast buffer")
+		}
+	}
+	
 	// Close all client connections
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -429,11 +535,11 @@ func (n *Notifier) Shutdown(ctx context.Context) error {
 			client.conn.Close()
 		}
 		
-		// Unsubscribe from router
-		router.Unsubscribe(client.Subscription.ID)
-		
 		delete(n.clients, id)
 	}
+	
+	n.logger.Info().Int("closed_clients", len(n.clients)).Msg("All client connections closed")
+	n.clients = make(map[string]*Client)
 	
 	return nil
 }

@@ -1,0 +1,148 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/assert"
+)
+
+// TestAPIEndpoints is a basic verification of API endpoints that doesn't depend on external packages
+func TestAPIEndpoints(t *testing.T) {
+	// Create a new Fiber app
+	app := fiber.New()
+
+	// Configure app with basic endpoints for testing
+	app.Get("/healthz", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
+
+	app.Get("/readyz", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
+
+	app.Post("/workunit", func(c *fiber.Ctx) error {
+		var req map[string]interface{}
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Invalid request body",
+			})
+		}
+
+		// Check for required fields
+		if _, ok := req["context_id"]; !ok {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Context ID is required",
+			})
+		}
+
+		// Return a mock work unit
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"work_unit": fiber.Map{
+				"id":         "test-id",
+				"context_id": req["context_id"],
+				"agent_id":   req["agent_id"],
+				"type":       req["type"],
+			},
+		})
+	})
+
+	// Run tests with the app
+	testHealthEndpoints(t, app)
+	testCreateWorkUnit(t, app)
+	testCreateWorkUnitMissingContext(t, app)
+}
+
+// Test health check endpoints
+func testHealthEndpoints(t *testing.T, app *fiber.App) {
+	// Test /healthz
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	
+	body, err := io.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", string(body))
+	
+	// Test /readyz
+	req = httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	resp, err = app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	
+	body, err = io.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, "OK", string(body))
+}
+
+// Test creating a work unit
+func testCreateWorkUnit(t *testing.T, app *fiber.App) {
+	// Prepare request
+	reqBody := map[string]interface{}{
+		"context_id": "test-context",
+		"agent_id":   "test-agent",
+		"type":       1, // MESSAGE type
+		"payload":    "test payload",
+	}
+	
+	jsonData, err := json.Marshal(reqBody)
+	assert.NoError(t, err)
+	
+	// Send request
+	req := httptest.NewRequest(http.MethodPost, "/workunit", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	
+	// Parse response
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+	
+	// Verify response structure
+	workUnit, ok := result["work_unit"].(map[string]interface{})
+	assert.True(t, ok, "Expected work_unit in response")
+	
+	// Verify fields
+	assert.Equal(t, "test-id", workUnit["id"])
+	assert.Equal(t, "test-context", workUnit["context_id"])
+	assert.Equal(t, "test-agent", workUnit["agent_id"])
+	assert.Equal(t, float64(1), workUnit["type"])
+}
+
+// Test validation when context ID is missing
+func testCreateWorkUnitMissingContext(t *testing.T, app *fiber.App) {
+	// Prepare request with missing context_id
+	reqBody := map[string]interface{}{
+		"agent_id": "test-agent",
+		"type":     1,
+		"payload":  "test payload",
+	}
+	
+	jsonData, err := json.Marshal(reqBody)
+	assert.NoError(t, err)
+	
+	// Send request
+	req := httptest.NewRequest(http.MethodPost, "/workunit", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	
+	// Parse response
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+	
+	// Verify error message
+	errorMsg, ok := result["error"].(string)
+	assert.True(t, ok, "Expected error message in response")
+	assert.Contains(t, errorMsg, "Context ID is required")
+}

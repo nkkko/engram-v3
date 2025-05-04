@@ -33,8 +33,9 @@ func DefaultConfig() Config {
 
 // StorageInterface defines the storage operations needed by the lock manager
 type StorageInterface interface {
-	AcquireLock(ctx context.Context, req *proto.AcquireLockRequest) (*proto.AcquireLockResponse, error)
-	ReleaseLock(ctx context.Context, req *proto.ReleaseLockRequest) (*proto.ReleaseLockResponse, error)
+	AcquireLock(ctx context.Context, req *proto.AcquireLockRequest) (*proto.LockHandle, error)
+	ReleaseLock(ctx context.Context, req *proto.ReleaseLockRequest) (bool, error)
+	GetLock(ctx context.Context, resourcePath string) (*proto.LockHandle, error)
 }
 
 // LockManager handles resource locking and concurrency control

@@ -1,0 +1,649 @@
+openapi: 3.0.3
+info:
+  title: Engram v3 API
+  description: API for the Engram v3 system
+  version: 1.0.0
+  
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+    
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [validation, not_found, conflict, internal, unauthorized, forbidden, timeout]
+          description: The type of error
+        code:
+          type: string
+          description: A machine-readable error code
+        message:
+          type: string
+          description: A human-readable error message
+        details:
+          type: object
+          description: Additional error details
+        request_id:
+          type: string
+          description: A unique identifier for the request
+          
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+          description: Indicates whether the request was successful
+        request_id:
+          type: string
+          description: A unique identifier for the request
+        error:
+          $ref: '#/components/schemas/Error'
+          
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+          description: Indicates whether the request was successful
+        request_id:
+          type: string
+          description: A unique identifier for the request
+        data:
+          type: object
+          description: The response data
+        meta:
+          type: object
+          description: Additional metadata
+          
+    WorkUnitType:
+      type: string
+      enum: [MESSAGE, SYSTEM]
+      description: The type of work unit
+      
+    Relationship:
+      type: object
+      properties:
+        type:
+          type: string
+          description: The type of relationship
+        target:
+          type: string
+          description: The target of the relationship
+    
+    WorkUnit:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for the work unit
+        context_id:
+          type: string
+          description: The ID of the context this work unit belongs to
+        agent_id:
+          type: string
+          description: The ID of the agent that created this work unit
+        type:
+          $ref: '#/components/schemas/WorkUnitType'
+          description: The type of work unit
+        timestamp:
+          type: string
+          format: date-time
+          description: The timestamp when this work unit was created
+        payload:
+          type: string
+          description: The payload of the work unit
+        meta:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional metadata for the work unit
+        relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/Relationship'
+          description: Relationships to other work units
+    
+    Context:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for the context
+        display_name:
+          type: string
+          description: The display name of the context
+        agent_ids:
+          type: array
+          items:
+            type: string
+          description: The IDs of agents in this context
+        pinned_units:
+          type: array
+          items:
+            type: string
+          description: The IDs of pinned work units in this context
+        meta:
+          type: object
+          additionalProperties:
+            type: string
+          description: Additional metadata for the context
+        created_at:
+          type: string
+          format: date-time
+          description: The timestamp when this context was created
+        updated_at:
+          type: string
+          format: date-time
+          description: The timestamp when this context was last updated
+          
+    Lock:
+      type: object
+      properties:
+        resource_path:
+          type: string
+          description: The path of the resource being locked
+        holder_agent:
+          type: string
+          description: The ID of the agent holding the lock
+        lock_id:
+          type: string
+          description: The unique identifier for the lock
+        expires_at:
+          type: string
+          format: date-time
+          description: The timestamp when this lock expires
+          
+    PaginationMeta:
+      type: object
+      properties:
+        total_count:
+          type: integer
+          description: The total number of items
+        limit:
+          type: integer
+          description: The maximum number of items returned
+        offset:
+          type: integer
+          description: The offset of the first item returned
+        next_cursor:
+          type: string
+          description: The cursor for the next page of results
+          
+  responses:
+    BadRequest:
+      description: The request was invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+            
+    NotFound:
+      description: The requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+            
+    Conflict:
+      description: The request conflicts with the current state of the resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+            
+    InternalServerError:
+      description: An internal server error occurred
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+            
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      description: Returns OK if the server is healthy
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+                
+  /readyz:
+    get:
+      summary: Readiness check
+      description: Returns OK if the server is ready to serve requests
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+                
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns Prometheus metrics
+      responses:
+        '200':
+          description: OK
+                
+  /workunit:
+    post:
+      summary: Create a new work unit
+      description: Creates a new work unit in the specified context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - context_id
+                - agent_id
+                - type
+                - payload
+              properties:
+                context_id:
+                  type: string
+                  description: The ID of the context this work unit belongs to
+                agent_id:
+                  type: string
+                  description: The ID of the agent creating this work unit
+                type:
+                  $ref: '#/components/schemas/WorkUnitType'
+                  description: The type of work unit
+                payload:
+                  type: string
+                  description: The payload of the work unit
+                meta:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Additional metadata for the work unit
+                relationships:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Relationship'
+                  description: Relationships to other work units
+      responses:
+        '201':
+          description: Work unit created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WorkUnit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+  /workunit/{id}:
+    get:
+      summary: Get a work unit by ID
+      description: Returns a work unit by its ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the work unit
+      responses:
+        '200':
+          description: Work unit found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/WorkUnit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+  /workunits/{contextId}:
+    get:
+      summary: List work units for a context
+      description: Returns a list of work units for the specified context
+      parameters:
+        - name: contextId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the context
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+          description: The maximum number of work units to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The cursor for pagination
+        - name: reverse
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Whether to return results in reverse order
+      responses:
+        '200':
+          description: Work units found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WorkUnit'
+                      meta:
+                        $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+  /contexts/{id}:
+    get:
+      summary: Get a context by ID
+      description: Returns a context by its ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the context
+      responses:
+        '200':
+          description: Context found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Context'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    patch:
+      summary: Update a context
+      description: Updates a context by its ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                  description: The display name of the context
+                add_agents:
+                  type: array
+                  items:
+                    type: string
+                  description: Agent IDs to add to the context
+                remove_agents:
+                  type: array
+                  items:
+                    type: string
+                  description: Agent IDs to remove from the context
+                pin_units:
+                  type: array
+                  items:
+                    type: string
+                  description: Work unit IDs to pin in the context
+                unpin_units:
+                  type: array
+                  items:
+                    type: string
+                  description: Work unit IDs to unpin from the context
+                meta:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Additional metadata for the context
+      responses:
+        '200':
+          description: Context updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Context'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+  /locks:
+    post:
+      summary: Acquire a lock
+      description: Acquires a lock on a resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resource_path
+                - agent_id
+              properties:
+                resource_path:
+                  type: string
+                  description: The path of the resource to lock
+                agent_id:
+                  type: string
+                  description: The ID of the agent acquiring the lock
+                ttl_seconds:
+                  type: integer
+                  default: 60
+                  description: The time-to-live for the lock in seconds
+      responses:
+        '200':
+          description: Lock acquired
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Lock'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+  /locks/{resource}:
+    get:
+      summary: Get a lock
+      description: Returns information about a lock on a resource
+      parameters:
+        - name: resource
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The path of the resource
+      responses:
+        '200':
+          description: Lock found
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Lock'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+    delete:
+      summary: Release a lock
+      description: Releases a lock on a resource
+      parameters:
+        - name: resource
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The path of the resource
+        - name: agent_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the agent releasing the lock
+        - name: lock_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the lock
+      responses:
+        '200':
+          description: Lock released
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          released:
+                            type: boolean
+                            enum: [true]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+          
+  /search:
+    post:
+      summary: Search for work units
+      description: Searches for work units based on various criteria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: The search query
+                context_id:
+                  type: string
+                  description: The ID of the context to search in
+                agent_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: The IDs of agents to filter by
+                types:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/WorkUnitType'
+                  description: The types of work units to filter by
+                meta_filters:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Metadata filters
+                limit:
+                  type: integer
+                  default: 100
+                  description: The maximum number of results to return
+                offset:
+                  type: integer
+                  default: 0
+                  description: The offset for pagination
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WorkUnit'
+                      meta:
+                        $ref: '#/components/schemas/PaginationMeta'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'

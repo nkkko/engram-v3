@@ -7,13 +7,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nkkko/engram-v3/internal/domain"
 	"github.com/nkkko/engram-v3/pkg/proto"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
-// Subscription represents a client's subscription to events
-type Subscription struct {
+// Ensure Router implements domain.EventRouter
+var _ domain.EventRouter = (*Router)(nil)
+
+// routerSubscription represents a client's subscription to events
+type routerSubscription struct {
 	ID           string
 	ContextIDs   []string
 	Events       chan *proto.WorkUnit
@@ -37,7 +41,7 @@ func DefaultConfig() Config {
 // Router handles event routing to interested subscribers
 type Router struct {
 	config       Config
-	subscriptions map[string]*Subscription
+	subscriptions map[string]*routerSubscription
 	contextSubs  map[string]map[string]struct{} // contextID -> set of subscription IDs
 	mu           sync.RWMutex
 	logger       zerolog.Logger
@@ -56,7 +60,7 @@ func NewRouter(config ...Config) *Router {
 
 	return &Router{
 		config:       cfg,
-		subscriptions: make(map[string]*Subscription),
+		subscriptions: make(map[string]*routerSubscription),
 		contextSubs:  make(map[string]map[string]struct{}),
 		logger:       logger,
 	}
@@ -142,8 +146,8 @@ func (r *Router) routeEvent(event *proto.WorkUnit) {
 }
 
 // Subscribe creates a new subscription for the specified contexts
-func (r *Router) Subscribe(contextIDs ...string) *Subscription {
-	sub := &Subscription{
+func (r *Router) Subscribe(contextIDs ...string) *domain.Subscription {
+	sub := &routerSubscription{
 		ID:           generateID(),
 		ContextIDs:   contextIDs,
 		Events:       make(chan *proto.WorkUnit, r.config.MaxBufferSize),
@@ -164,7 +168,13 @@ func (r *Router) Subscribe(contextIDs ...string) *Subscription {
 		r.contextSubs[contextID][sub.ID] = struct{}{}
 	}
 
-	return sub
+	// Convert to domain.Subscription
+	return &domain.Subscription{
+		ID:           sub.ID,
+		ContextIDs:   sub.ContextIDs,
+		Events:       sub.Events,
+		LastAccessed: sub.LastAccessed,
+	}
 }
 
 // Unsubscribe removes a subscription

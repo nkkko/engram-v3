@@ -1,4 +1,4 @@
-.PHONY: build clean test run docker-build docker-run proto
+.PHONY: build clean test run docker-build docker-run docker-test proto
 
 # Variables
 BINARY_NAME=engram
@@ -9,6 +9,8 @@ VERSION=$(shell git describe --tags --always || echo "dev")
 BUILD_TIME=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 COMMIT=$(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X main.Commit=${COMMIT}"
+DOCKER_IMAGE=engram
+DOCKER_TAG=$(VERSION)
 
 # Go commands
 GO=go
@@ -50,11 +52,21 @@ run:
 
 # Build Docker image
 docker-build:
-	docker build -t engram:$(VERSION) .
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
 
 # Run Docker container
 docker-run:
-	docker run -p 8080:8080 -v $(PWD)/data:/app/data engram:$(VERSION)
+	docker run -p 8080:8080 -v $(PWD)/data:/app/data $(DOCKER_IMAGE):$(DOCKER_TAG)
+	
+# Run tests in Docker
+docker-test:
+	docker build --target test -t $(DOCKER_IMAGE):test .
+	docker run --rm $(DOCKER_IMAGE):test
+
+# Run specific test in Docker
+docker-test-%:
+	docker build --target test -t $(DOCKER_IMAGE):test .
+	docker run --rm $(DOCKER_IMAGE):test go test -v ./$* -count=1
 
 # Generate Protocol Buffers
 proto:
@@ -75,6 +87,10 @@ fmt:
 lint:
 	golangci-lint run ./...
 
+# Lint and fix
+lint-fix:
+	golangci-lint run --fix ./...
+
 # Generate 
 generate:
 	$(GO) generate ./...
@@ -88,3 +104,17 @@ version:
 	@echo "Version: $(VERSION)"
 	@echo "Build Time: $(BUILD_TIME)"
 	@echo "Commit: $(COMMIT)"
+
+# MCP Server targets
+build-mcp:
+	mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=1 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/mcp-server ./apps/mcp
+
+run-mcp: build-mcp
+	$(BUILD_DIR)/mcp-server
+
+test-mcp:
+	cd apps/mcp/cmd/test-client && $(GO) run main.go
+	
+test-mcp-claude: build-mcp
+	cd apps/mcp/cmd/claude-test && $(GO) run main.go

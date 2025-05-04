@@ -40,7 +40,7 @@ func (m *MockStorage) SetFailRelease(fail bool) {
 }
 
 // AcquireLock mocks the storage operation
-func (m *MockStorage) AcquireLock(ctx context.Context, req *proto.AcquireLockRequest) (*proto.AcquireLockResponse, error) {
+func (m *MockStorage) AcquireLock(ctx context.Context, req *proto.AcquireLockRequest) (*proto.LockHandle, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	
@@ -50,23 +50,29 @@ func (m *MockStorage) AcquireLock(ctx context.Context, req *proto.AcquireLockReq
 		return nil, ErrMockStorageFailed
 	}
 	
-	// No actual implementation needed for testing
-	return &proto.AcquireLockResponse{}, nil
+	// Create lock handle to satisfy interface
+	lockHandle := &proto.LockHandle{
+		ResourcePath: req.ResourcePath,
+		HolderAgent:  req.AgentId,
+		LockId:       "mock-lock-id",
+	}
+	
+	return lockHandle, nil
 }
 
 // ReleaseLock mocks the storage operation
-func (m *MockStorage) ReleaseLock(ctx context.Context, req *proto.ReleaseLockRequest) (*proto.ReleaseLockResponse, error) {
+func (m *MockStorage) ReleaseLock(ctx context.Context, req *proto.ReleaseLockRequest) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	
 	m.releaseCalled++
 	
 	if m.failRelease {
-		return nil, ErrMockStorageFailed
+		return false, ErrMockStorageFailed
 	}
 	
 	// No actual implementation needed for testing
-	return &proto.ReleaseLockResponse{}, nil
+	return true, nil
 }
 
 // AcquireCallCount returns the number of times AcquireLock was called
@@ -81,6 +87,20 @@ func (m *MockStorage) ReleaseCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.releaseCalled
+}
+
+// GetLock mocks retrieval of a lock by resource path
+func (m *MockStorage) GetLock(ctx context.Context, resourcePath string) (*proto.LockHandle, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	// Return the lock if it exists
+	if lock, exists := m.locks[resourcePath]; exists {
+		return lock, nil
+	}
+	
+	// Not found
+	return nil, proto.NewError("lock not found")
 }
 
 // Reset resets the mock
