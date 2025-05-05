@@ -141,13 +141,13 @@ func TestMCPToolHandler_HandleToolCall(t *testing.T) {
 				if result.IsError {
 					t.Errorf("Unexpected error: %s", result.Message)
 				}
-				
+
 				messages, ok := result.Data.([]ConversationMessage)
 				if !ok {
 					t.Errorf("Expected result data to be []ConversationMessage")
 					return
 				}
-				
+
 				if len(messages) != 2 {
 					t.Errorf("Expected 2 messages, got %d", len(messages))
 				}
@@ -185,17 +185,17 @@ func TestMCPToolHandler_HandleToolCall(t *testing.T) {
 				if result.IsError {
 					t.Errorf("Unexpected error: %s", result.Message)
 				}
-				
+
 				data, ok := result.Data.(map[string]interface{})
 				if !ok {
 					t.Errorf("Expected result data to be map[string]interface{}")
 					return
 				}
-				
+
 				if _, ok := data["id"]; !ok {
 					t.Errorf("Expected result to contain memory ID")
 				}
-				
+
 				if _, ok := data["timestamp"]; !ok {
 					t.Errorf("Expected result to contain timestamp")
 				}
@@ -242,17 +242,17 @@ func TestMCPToolHandler_HandleToolCall(t *testing.T) {
 				if result.IsError {
 					t.Errorf("Unexpected error: %s", result.Message)
 				}
-				
+
 				memory, ok := result.Data.(*ConversationMessage)
 				if !ok {
 					t.Errorf("Expected result data to be *ConversationMessage")
 					return
 				}
-				
+
 				if memory.ID != "test-memory-id" {
 					t.Errorf("Expected memory ID to be 'test-memory-id', got: %s", memory.ID)
 				}
-				
+
 				if memory.Type != MessageTypeMemory {
 					t.Errorf("Expected memory type to be '%s', got: %s", MessageTypeMemory, memory.Type)
 				}
@@ -291,13 +291,13 @@ func TestMCPToolHandler_HandleToolCall(t *testing.T) {
 				if result.IsError {
 					t.Errorf("Unexpected error: %s", result.Message)
 				}
-				
+
 				messages, ok := result.Data.([]ConversationMessage)
 				if !ok {
 					t.Errorf("Expected result data to be []ConversationMessage")
 					return
 				}
-				
+
 				if len(messages) != 2 {
 					t.Errorf("Expected 2 messages, got %d", len(messages))
 				}
@@ -311,13 +311,13 @@ func TestMCPToolHandler_HandleToolCall(t *testing.T) {
 			// Setup mock storage
 			mockStorage := NewMockStorageClient()
 			tc.setup(mockStorage)
-			
+
 			// Create tool handler
 			handler := NewMCPToolHandler(mockStorage)
-			
+
 			// Execute tool call
 			result := handler.HandleToolCall(tc.toolName, tc.contextID, tc.agentID, tc.params)
-			
+
 			// Validate result
 			tc.validate(t, result)
 		})
@@ -327,7 +327,7 @@ func TestMCPToolHandler_HandleToolCall(t *testing.T) {
 // Test tool definitions
 func TestGetToolDefinitions(t *testing.T) {
 	tools := GetToolDefinitions()
-	
+
 	// Verify all expected tools are present
 	expectedTools := []string{
 		ToolSearchConversation,
@@ -335,22 +335,22 @@ func TestGetToolDefinitions(t *testing.T) {
 		ToolRetrieveMemory,
 		ToolListRecentMessages,
 	}
-	
+
 	if len(tools) != len(expectedTools) {
 		t.Errorf("Expected %d tools, got %d", len(expectedTools), len(tools))
 	}
-	
+
 	// Check each tool has the required fields
 	for _, tool := range tools {
 		if tool.Name == "" {
 			t.Errorf("Tool name is empty")
 		}
-		
+
 		if tool.Description == "" {
 			t.Errorf("Tool description is empty for %s", tool.Name)
 		}
-		
-		if tool.Schema == nil {
+
+		if tool.InputSchema == nil {
 			t.Errorf("Tool schema is nil for %s", tool.Name)
 		}
 	}

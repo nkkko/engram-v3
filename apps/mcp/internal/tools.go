@@ -14,9 +14,9 @@ const (
 
 // ToolDefinition represents a tool's schema and metadata
 type ToolDefinition struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Schema      map[string]interface{} `json:"schema"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	InputSchema  map[string]interface{} `json:"inputSchema"`
 }
 
 // ToolResult represents the result of a tool call
@@ -32,7 +32,7 @@ func GetToolDefinitions() []ToolDefinition {
 		{
 			Name:        ToolSearchConversation,
 			Description: "Search for content within the conversation history",
-			Schema: map[string]interface{}{
+			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"query": map[string]interface{}{
@@ -59,7 +59,7 @@ func GetToolDefinitions() []ToolDefinition {
 		{
 			Name:        ToolStoreMemory,
 			Description: "Store a memory or note for future reference",
-			Schema: map[string]interface{}{
+			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"content": map[string]interface{}{
@@ -77,7 +77,7 @@ func GetToolDefinitions() []ToolDefinition {
 		{
 			Name:        ToolRetrieveMemory,
 			Description: "Retrieve a specific memory by ID",
-			Schema: map[string]interface{}{
+			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"id": map[string]interface{}{
@@ -91,7 +91,7 @@ func GetToolDefinitions() []ToolDefinition {
 		{
 			Name:        ToolListRecentMessages,
 			Description: "List recent messages in the conversation",
-			Schema: map[string]interface{}{
+			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"limit": map[string]interface{}{

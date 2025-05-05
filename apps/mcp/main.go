@@ -64,15 +64,15 @@ func main() {
 	if logDir == "" {
 		logDir = "./logs"
 	}
-	
+
 	dataDir := os.Getenv("ENGRAM_DATA_DIR")
 	if dataDir == "" {
 		dataDir = "./data"
 	}
-	
+
 	// Configure logging - fallback to stderr if file logging fails
 	logWriter := os.Stderr
-	
+
 	// Try to setup file logging, but don't fail if it's not possible
 	if err := os.MkdirAll(logDir, 0755); err == nil {
 		logFile, err := os.OpenFile(filepath.Join(logDir, "mcp-server.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -85,14 +85,14 @@ func main() {
 	} else {
 		fmt.Fprintf(os.Stderr, "WARNING: Failed to create log directory %s: %v\n", logDir, err)
 	}
-	
+
 	// Setup logger to write to the selected output
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = zerolog.New(logWriter).With().Timestamp().Logger()
-	
+
 	// Initialize storage with fallback to in-memory mode
 	var storage internal.StorageClient
-	
+
 	// Try to create data directory, but don't fail if not possible
 	if createErr := os.MkdirAll(dataDir, 0755); createErr != nil {
 		log.Warn().Err(createErr).Str("dir", dataDir).Msg("Failed to create data directory, using in-memory storage")
@@ -107,10 +107,10 @@ func main() {
 		}
 	}
 	defer storage.Close()
-	
+
 	// Initialize tool handler
 	toolHandler := internal.NewMCPToolHandler(storage)
-	
+
 	// Create server instance
 	server := &MCPServer{
 		name:          "Engram Memory",
@@ -119,7 +119,7 @@ func main() {
 		toolHandler:   toolHandler,
 		compatMode:    claudeDesktopMode,
 	}
-	
+
 	// Run the server
 	server.run()
 }
@@ -128,24 +128,24 @@ func (s *MCPServer) run() {
 	// Use unbuffered stdout for direct writing
 	// This approach avoids potential buffer issues with Claude Desktop
 	writer := os.Stdout
-	
+
 	// Print initial debug info
 	fmt.Fprintf(os.Stderr, "DEBUG: Server starting, waiting for input...\n")
 	fmt.Fprintf(os.Stderr, "DEBUG: Using unbuffered writer for direct output\n")
-	
+
 	// Create a signal channel to keep the program alive
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
+
 	// Create a long-lived heartbeat timer to keep the server alive
 	// even if there is no communication from the client
 	heartbeatTicker := time.NewTicker(60 * time.Second)
 	defer heartbeatTicker.Stop()
-	
+
 	// Set up a channel for incoming messages
 	msgChan := make(chan string, 10)
 	errChan := make(chan error, 1)
-	
+
 	// Start a goroutine to read from stdin
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
@@ -153,31 +153,31 @@ func (s *MCPServer) run() {
 		const maxCapacity = 10 * 1024 * 1024 // 10MB
 		buf := make([]byte, 0, maxCapacity)
 		scanner.Buffer(buf, maxCapacity)
-		
+
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line != "" {
 				msgChan <- line
 			}
 		}
-		
+
 		if err := scanner.Err(); err != nil {
 			errChan <- err
 		} else {
 			errChan <- io.EOF
 		}
 	}()
-	
+
 	// Add a timeout for initialization - if client doesn't send 'initialized' notification,
 	// we'll proceed anyway
 	initTimeoutTimer := time.NewTimer(5 * time.Second)
 	defer initTimeoutTimer.Stop()
-	
+
 	// Mark if we've been initialized
 	s.lock.Lock()
 	wasAlreadyInitialized := s.initialized
 	s.lock.Unlock()
-	
+
 	// Main server loop
 	running := true
 	for running {
@@ -193,7 +193,7 @@ func (s *MCPServer) run() {
            }
            fmt.Fprintf(os.Stderr, "DEBUG: Received interrupt signal, terminating server\n")
            running = false
-			
+
        case err := <-errChan:
            // Handle read errors
            s.lock.Lock()
@@ -213,11 +213,11 @@ func (s *MCPServer) run() {
                fmt.Fprintf(os.Stderr, "ERROR: Failed to read from stdin: %v\n", err)
            }
            running = false
-			
+
 		case line := <-msgChan:
 			// Handle incoming message
 			fmt.Fprintf(os.Stderr, "DEBUG: Received: %s\n", line)
-			
+
 			// Parse the message
 			var message Message
 			if err := json.Unmarshal([]byte(line), &message); err != nil {
@@ -226,10 +226,10 @@ func (s *MCPServer) run() {
 				s.sendError(writer, nil, -32700, "Parse error", err.Error())
 				continue
 			}
-			
+
 			// Handle the message
 			s.handleMessage(writer, message)
-			
+
 			// After handling the message, check if we should exit
 			if message.Method == "shutdown" {
 				fmt.Fprintf(os.Stderr, "DEBUG: Received shutdown request, terminating server\n")
@@ -239,40 +239,51 @@ func (s *MCPServer) run() {
 				}
 				running = false
 			}
-			
+
 			// If this is the initialize message, reset the timeout timer
 			if message.Method == "initialize" {
 				initTimeoutTimer.Reset(5 * time.Second)
 			}
-			
+
 			// If this is the initialized notification, mark as initialized
 			if message.Method == "initialized" || message.Method == "notifications/initialized" {
 				s.lock.Lock()
 				s.initialized = true
 				s.lock.Unlock()
-				
+
 				// Stop the initialization timeout
 				if !initTimeoutTimer.Stop() {
 					<-initTimeoutTimer.C
 				}
 			}
-			
-		case <-initTimeoutTimer.C:
-			// If we haven't received an 'initialized' notification after timeout,
-			// assume we're initialized anyway and continue
-			s.lock.Lock()
-			if !s.initialized && !wasAlreadyInitialized {
-				s.initialized = true
-				fmt.Fprintf(os.Stderr, "DEBUG: No 'initialized' notification received after timeout, assuming initialized anyway\n")
-			}
-			s.lock.Unlock()
-			
+
+       case <-initTimeoutTimer.C:
+           // If we haven't received an 'initialized' notification after timeout,
+           // assume we're initialized anyway and continue
+           s.lock.Lock()
+           if !s.initialized && !wasAlreadyInitialized {
+               s.initialized = true
+               fmt.Fprintf(os.Stderr, "DEBUG: No 'initialized' notification received after timeout, assuming initialized anyway\n")
+               // In compatibility mode, send initial tools list notification after timeout
+               if s.compatMode {
+                   tools := internal.GetToolDefinitions()
+                   notif := Message{
+                       JSONRPC: "2.0",
+                       Method:  "notifications/tools/list_changed",
+                       Params:  map[string]interface{}{ "tools": tools },
+                   }
+                   fmt.Fprintf(os.Stderr, "DEBUG: Sending tools list notification after timeout: %+v\n", tools)
+                   s.sendMessage(writer, notif)
+               }
+           }
+           s.lock.Unlock()
+
 		case <-heartbeatTicker.C:
 			// Just a heartbeat to keep us alive, no action needed
 			fmt.Fprintf(os.Stderr, "DEBUG: Server heartbeat - still running\n")
 		}
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "DEBUG: Server shutting down\n")
 }
 
@@ -298,7 +309,7 @@ func (s *MCPServer) handleMessage(writer io.Writer, msg Message) {
 // handleShutdown handles the shutdown request
 func (s *MCPServer) handleShutdown(writer io.Writer, msg Message) {
 	fmt.Fprintf(os.Stderr, "DEBUG: Received shutdown request, terminating server\n")
-	
+
 	// Send an empty response for the shutdown request
 	if msg.ID != nil {
 		s.sendResponse(writer, msg.ID, nil)
@@ -318,17 +329,17 @@ func (s *MCPServer) handleInitialize(writer io.Writer, msg Message) {
 		ContextID string `json:"contextId"`
 		AgentID   string `json:"agentId"`
 	}
-	
+
 	// Log the raw params for debugging Claude Desktop issues
 	rawParamsData, _ := json.Marshal(msg.Params)
 	fmt.Fprintf(os.Stderr, "DEBUG: Raw initialize params: %s\n", string(rawParamsData))
-	
+
 	if err := parseParams(msg.Params, &params); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to parse initialize parameters: %v\n", err)
 		s.sendError(writer, msg.ID, -32602, "Invalid params", err.Error())
 		return
 	}
-	
+
 	// Store context ID and agent ID
 	s.lock.Lock()
 	if params.ContextID != "" {
@@ -338,7 +349,7 @@ func (s *MCPServer) handleInitialize(writer io.Writer, msg Message) {
 		s.contextID = uuid.New().String()
 		fmt.Fprintf(os.Stderr, "DEBUG: Generated new context ID: %s\n", s.contextID)
 	}
-	
+
 	if params.AgentID != "" {
 		s.agentID = params.AgentID
 	} else {
@@ -347,30 +358,33 @@ func (s *MCPServer) handleInitialize(writer io.Writer, msg Message) {
 		fmt.Fprintf(os.Stderr, "DEBUG: Using client name as agent ID: %s\n", s.agentID)
 	}
 	s.lock.Unlock()
-	
+
 	// Log client info and protocol version
-	fmt.Fprintf(os.Stderr, "DEBUG: Client connected - %s %s (Protocol: %s)\n", 
+	fmt.Fprintf(os.Stderr, "DEBUG: Client connected - %s %s (Protocol: %s)\n",
 		params.ClientInfo.Name, params.ClientInfo.Version, params.ProtocolVersion)
-	
-	// Prepare response according to MCP protocol
+
+	// Prepare initialize response according to MCP protocol
+	// Include protocol version, advertise support for tools and listChanged notifications
 	response := map[string]interface{}{
+		"protocolVersion": params.ProtocolVersion,
+		"capabilities": map[string]interface{}{
+			"tools": map[string]interface{}{ "listChanged": true },
+		},
 		"serverInfo": map[string]interface{}{
 			"name":    s.name,
 			"version": s.version,
 		},
-		"capabilities": map[string]interface{}{
-			"tools": true,
-		},
 	}
-	
+
 	// Send response
 	s.sendResponse(writer, msg.ID, response)
-	
+
 	// Important: After initialize, wait for the client to send "initialized" notification
 	fmt.Fprintf(os.Stderr, "DEBUG: Initialization response sent, waiting for 'initialized' notification\n")
 	// Note: If running in Claude Desktop mode, we may not receive this notification
 	// and will proceed after the timeout expires
-	fmt.Fprintf(os.Stderr, "DEBUG: If no 'initialized' notification is received within 5 seconds, server will proceed anyway\n")
+   fmt.Fprintf(os.Stderr, "DEBUG: If no 'initialized' notification is received within 5 seconds, server will proceed anyway\n")
+
 }
 
 func (s *MCPServer) handleInitialized(writer io.Writer, msg Message) {
@@ -378,19 +392,29 @@ func (s *MCPServer) handleInitialized(writer io.Writer, msg Message) {
 	s.lock.Lock()
 	s.initialized = true
 	s.lock.Unlock()
-	
+
 	fmt.Fprintf(os.Stderr, "DEBUG: Server initialized - ready to handle tool requests\n")
-	
-	// No response needed for notifications (method calls without an ID)
-	// This is important: MCP notifications don't expect responses
-	
-	// Stay alive and wait for further messages like tools/list or tools/call
+
+   // No response needed for notifications (method calls without an ID)
+   // This is important: MCP notifications don't expect responses
+
+   // In compatibility mode, send initial tools list notification after initialization
+   if s.compatMode {
+       tools := internal.GetToolDefinitions()
+       notif := Message{
+           JSONRPC: "2.0",
+           Method:  "notifications/tools/list_changed",
+           Params:  map[string]interface{}{ "tools": tools },
+       }
+       fmt.Fprintf(os.Stderr, "DEBUG: Sending tools list notification after initialized: %+v\n", tools)
+       s.sendMessage(writer, notif)
+   }
 }
 
 func (s *MCPServer) handleToolsList(writer io.Writer, msg Message) {
 	// Get tool definitions
 	tools := internal.GetToolDefinitions()
-	
+
 	// Send response
 	s.sendResponse(writer, msg.ID, map[string]interface{}{
 		"tools": tools,
@@ -401,36 +425,65 @@ func (s *MCPServer) handleToolsCall(writer io.Writer, msg Message) {
 	// Parse parameters
 	var params struct {
 		Name       string                 `json:"name"`
-		Parameters map[string]interface{} `json:"parameters"`
+		Parameters map[string]interface{} `json:"parameters,omitempty"`
+		Arguments  map[string]interface{} `json:"arguments,omitempty"`
 	}
-	
+
 	if err := parseParams(msg.Params, &params); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to parse tool call parameters: %v\n", err)
 		s.sendError(writer, msg.ID, -32602, "Invalid params", err.Error())
 		return
 	}
-	
+
+	// Determine argument map (supports both "parameters" and legacy "arguments")
+	var argMap map[string]interface{}
+	if params.Parameters != nil {
+		argMap = params.Parameters
+	} else {
+		argMap = params.Arguments
+	}
+
 	// Validate tool name
 	if params.Name == "" {
 		s.sendError(writer, msg.ID, -32602, "Invalid params", "Missing tool name")
 		return
 	}
-	
+
 	fmt.Fprintf(os.Stderr, "DEBUG: Tool call: %s\n", params.Name)
-	
+
 	// Handle tool call
 	result := s.toolHandler.HandleToolCall(
 		params.Name,
 		s.contextID,
 		s.agentID,
-		params.Parameters,
+		argMap,
 	)
-	
-	// Return the result
+
+	// Convert ToolResult to MCP result structure
 	if result.IsError {
-		s.sendError(writer, msg.ID, 500, result.Message, "")
+		mcpResult := map[string]interface{}{
+			"isError": true,
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "text",
+					"text": result.Message,
+				},
+			},
+		}
+		s.sendResponse(writer, msg.ID, mcpResult)
 	} else {
-		s.sendResponse(writer, msg.ID, result.Data)
+		// Marshal the data to a JSON string for human-readable text content
+		jsonBytes, _ := json.MarshalIndent(result.Data, "", "  ")
+		mcpResult := map[string]interface{}{
+			"isError": false,
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "text",
+					"text": string(jsonBytes),
+				},
+			},
+		}
+		s.sendResponse(writer, msg.ID, mcpResult)
 	}
 }
 
@@ -441,7 +494,7 @@ func parseParams(params interface{}, target interface{}) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return json.Unmarshal(data, target)
 }
 
@@ -451,7 +504,7 @@ func (s *MCPServer) sendResponse(writer io.Writer, id interface{}, result interf
 		ID:      id,
 		Result:  result,
 	}
-	
+
 	s.sendMessage(writer, response)
 }
 
@@ -465,7 +518,7 @@ func (s *MCPServer) sendError(writer io.Writer, id interface{}, code int, messag
 			Data:    data,
 		},
 	}
-	
+
 	s.sendMessage(writer, response)
 }
 
@@ -475,17 +528,17 @@ func (s *MCPServer) sendMessage(writer io.Writer, msg interface{}) {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to marshal message: %v\n", err)
 		return
 	}
-	
+
 	// Log outgoing message
 	fmt.Fprintf(os.Stderr, "DEBUG: Sending: %s\n", string(data))
-	
+
 	// Use os.Stdout directly for response sending
 	// This ensures responses go directly to the client without potential buffer issues
 	fmt.Fprintf(os.Stderr, "DEBUG: Writing response to os.Stdout directly\n")
 	fmt.Fprintln(os.Stdout, string(data))
-	
-	// Force os.Stdout to flush immediately 
+
+	// Force os.Stdout to flush immediately
 	os.Stdout.Sync()
-	
+
 	fmt.Fprintf(os.Stderr, "DEBUG: Response sent successfully\n")
 }
