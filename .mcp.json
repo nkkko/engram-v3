@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "engram": {
+      "type": "stdio",
+      "command": "/Users/nikola/dev/codex/codex-cli/engram-v3/bin/mcp-server",
+      "args": [],
+      "env": {}
+    }
+  }
+}

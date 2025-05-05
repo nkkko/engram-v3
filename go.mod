@@ -12,11 +12,11 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/golang-lru v1.0.2
 	github.com/mattn/go-sqlite3 v1.14.18
-	github.com/prometheus/client_golang v1.17.0
+	github.com/prometheus/client_golang v1.20.4
 	github.com/rs/zerolog v1.31.0
 	github.com/stretchr/testify v1.10.0
 	github.com/valyala/fasthttp v1.50.0
-	golang.org/x/sync v0.4.0
+	golang.org/x/sync v0.8.0
 	google.golang.org/protobuf v1.36.6
 )
 
@@ -38,13 +38,14 @@ require (
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.5.0 // indirect
-	github.com/prometheus/common v0.45.0 // indirect
-	github.com/prometheus/procfs v0.12.0 // indirect
+	github.com/prometheus/client_model v0.6.1 // indirect
+	github.com/prometheus/common v0.60.0 // indirect
+	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
+	github.com/weaviate/weaviate-go-client/v4 v4.16.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect

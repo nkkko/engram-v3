@@ -65,7 +65,7 @@ type Engine struct {
 	router     *router.Router
 	notifier   *notifier.Notifier
 	lockMgr    *lockmanager.LockManager
-	search     *search.Search
+	search     *search.Engine
 	api        *api.API
 	shutdownCh chan struct{}
 	wg         sync.WaitGroup
@@ -139,9 +139,16 @@ func CreateEngine(config interface{}) (*Engine, error) {
 	searchConfig := search.Config{
 		DataDir: engineConfig.DataDir,
 	}
-	search, err := search.NewSearch(searchConfig)
+	
+	// Vector search configuration
+	vectorConfig := search.VectorConfig{
+		Enabled: false, // Disabled by default in engine config
+	}
+	
+	// Create the search engine
+	searchEngine, err := search.NewEngine(searchConfig, vectorConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize search: %w", err)
+		return nil, fmt.Errorf("failed to initialize search engine: %w", err)
 	}
 	
 	// Initialize notifier with router
@@ -154,14 +161,14 @@ func CreateEngine(config interface{}) (*Engine, error) {
 	apiConfig := api.Config{
 		Addr: engineConfig.ServerAddr,
 	}
-	api := api.NewAPI(apiConfig, storage, r, notifier, lockMgr, search)
+	api := api.NewAPI(apiConfig, storage, r, notifier, lockMgr, searchEngine)
 	
 	// Create and return the engine
-	return NewEngine(engineConfig, storage, r, lockMgr, search, api), nil
+	return NewEngine(engineConfig, storage, r, lockMgr, searchEngine, api), nil
 }
 
 // NewEngine creates a new Engine instance with the given configuration and components
-func NewEngine(config Config, storage storage.Storage, router *router.Router, lockMgr *lockmanager.LockManager, search *search.Search, api *api.API) *Engine {
+func NewEngine(config Config, storage storage.Storage, router *router.Router, lockMgr *lockmanager.LockManager, search *search.Engine, api *api.API) *Engine {
 	// Configure logging
 	level, err := zerolog.ParseLevel(config.LogLevel)
 	if err != nil {

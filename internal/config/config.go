@@ -70,11 +70,23 @@ type LocksConfig struct {
 
 // SearchConfig contains search engine settings
 type SearchConfig struct {
-	Engine           string `yaml:"engine"`
-	UpdateIntervalMs int    `yaml:"update_interval_ms"`
-	MaxBatchSize     int    `yaml:"max_batch_size"`
-	DefaultLimit     int    `yaml:"default_limit"`
-	MaxLimit         int    `yaml:"max_limit"`
+	Engine           string          `yaml:"engine"`
+	UpdateIntervalMs int             `yaml:"update_interval_ms"`
+	MaxBatchSize     int             `yaml:"max_batch_size"`
+	DefaultLimit     int             `yaml:"default_limit"`
+	MaxLimit         int             `yaml:"max_limit"`
+	Vector           VectorSearchConfig `yaml:"vector"`
+}
+
+// VectorSearchConfig contains vector search settings
+type VectorSearchConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	WeaviateURL    string `yaml:"weaviate_url"`
+	WeaviateAPIKey string `yaml:"weaviate_api_key"`
+	ClassName      string `yaml:"class_name"`
+	EmbeddingModel string `yaml:"embedding_model"`
+	EmbeddingURL   string `yaml:"embedding_url"`
+	EmbeddingKey   string `yaml:"embedding_key"`
 }
 
 // AuthConfig contains authentication settings
@@ -151,6 +163,12 @@ func DefaultConfig() *Config {
 			MaxBatchSize:     100,
 			DefaultLimit:     100,
 			MaxLimit:         1000,
+			Vector: VectorSearchConfig{
+				Enabled:        false,
+				WeaviateURL:    "http://localhost:8080",
+				ClassName:      "WorkUnit",
+				EmbeddingModel: "openai/text-embedding-3-small",
+			},
 		},
 		Auth: AuthConfig{
 			Enabled:              false,

@@ -47,6 +47,20 @@ func (c *Config) ToSearchConfig() search.Config {
 	}
 }
 
+// ToVectorSearchConfig converts to vector search config
+func (c *Config) ToVectorSearchConfig() search.VectorConfig {
+	return search.VectorConfig{
+		Enabled:        c.Search.Vector.Enabled,
+		WeaviateURL:    c.Search.Vector.WeaviateURL,
+		WeaviateAPIKey: c.Search.Vector.WeaviateAPIKey,
+		ClassName:      c.Search.Vector.ClassName,
+		BatchSize:      c.Search.MaxBatchSize,
+		EmbeddingModel: c.Search.Vector.EmbeddingModel,
+		EmbeddingURL:   c.Search.Vector.EmbeddingURL,
+		EmbeddingKey:   c.Search.Vector.EmbeddingKey,
+	}
+}
+
 // ToNotifierConfig converts to notifier config
 func (c *Config) ToNotifierConfig() notifier.Config {
 	return notifier.Config{
