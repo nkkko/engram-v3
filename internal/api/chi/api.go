@@ -14,7 +14,6 @@ import (
 	"github.com/nkkko/engram-v3/internal/api/models"
 	"github.com/nkkko/engram-v3/internal/api/response"
 	"github.com/nkkko/engram-v3/internal/api/validation"
-	"github.com/nkkko/engram-v3/internal/domain"
 	"github.com/nkkko/engram-v3/internal/lockmanager"
 	"github.com/nkkko/engram-v3/internal/notifier"
 	"github.com/nkkko/engram-v3/internal/search"
@@ -28,7 +27,7 @@ import (
 type Config struct {
 	// Server address
 	Addr string
-	
+
 	// Timeouts
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
@@ -50,8 +49,8 @@ type ChiAPI struct {
 	config      Config
 	router      *chi.Mux
 	server      *http.Server
-	storage     domain.StorageEngine
-	eventRouter domain.EventRouter
+	storage     StorageEngine
+	eventRouter EventRouter
 	notifier    *notifier.Notifier
 	lockManager *lockmanager.LockManager
 	search      *search.Search
@@ -61,8 +60,8 @@ type ChiAPI struct {
 // NewChiAPI creates a new API instance with Chi router
 func NewChiAPI(
 	config Config,
-	storage domain.StorageEngine,
-	router domain.EventRouter,
+	storage StorageEngine,
+	router EventRouter,
 	notifier *notifier.Notifier,
 	lockManager *lockmanager.LockManager,
 	search *search.Search,
@@ -72,15 +71,15 @@ func NewChiAPI(
 	if config.Addr == "" {
 		config.Addr = DefaultConfig().Addr
 	}
-	
+
 	if config.ReadTimeout == 0 {
 		config.ReadTimeout = DefaultConfig().ReadTimeout
 	}
-	
+
 	if config.WriteTimeout == 0 {
 		config.WriteTimeout = DefaultConfig().WriteTimeout
 	}
-	
+
 	if config.IdleTimeout == 0 {
 		config.IdleTimeout = DefaultConfig().IdleTimeout
 	}
@@ -169,7 +168,7 @@ func (a *ChiAPI) registerRoutes(r chi.Router) {
 		r.Post("/", a.handleCreateWorkUnit)
 		r.Get("/{id}", a.handleGetWorkUnit)
 	})
-	
+
 	r.Get("/workunits/{contextId}", a.handleListWorkUnits)
 
 	// Context endpoints
@@ -391,7 +390,7 @@ func (a *ChiAPI) handleReleaseLock(w http.ResponseWriter, r *http.Request) {
 	if agentID == "" {
 		agentID = r.URL.Query().Get("agent_id")
 	}
-	
+
 	lockID := r.URL.Query().Get("lock_id")
 
 	// Convert to proto request

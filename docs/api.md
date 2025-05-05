@@ -1,6 +1,6 @@
 # Engram v3 API Documentation
 
-Engram v3 provides a comprehensive HTTP API for managing work units, contexts, and locks. This document describes the available endpoints, request formats, and response structures.
+Engram v3 provides a comprehensive HTTP API for managing work units, contexts, locks, and search capabilities. This document describes the available endpoints, request formats, and response structures.
 
 ## Base URL
 
@@ -370,7 +370,7 @@ Releases a lock on a resource.
 
 #### POST /search
 
-Searches for work units.
+Searches for work units using text search.
 
 **Request Body**:
 ```json
@@ -405,6 +405,94 @@ Searches for work units.
   "total_count": number,
   "limit": number,
   "offset": number
+}
+```
+
+#### POST /search/vector
+
+Searches for work units using vector/semantic search.
+
+**Request Body**:
+```json
+{
+  "query": "string",
+  "context_id": "string",
+  "agent_ids": [
+    "string"
+  ],
+  "types": [
+    "string"
+  ],
+  "meta_filters": {
+    "key1": "value1",
+    "key2": "value2"
+  },
+  "limit": number,
+  "offset": number,
+  "min_similarity": number  // Optional, 0.0-1.0 range
+}
+```
+
+**Response**:
+- Status: `200 OK`
+- Body:
+```json
+{
+  "results": [
+    {
+      "work_unit": {
+        // Work unit object
+      },
+      "similarity": number  // 0.0-1.0 similarity score
+    }
+  ],
+  "total_count": number,
+  "limit": number,
+  "offset": number
+}
+```
+
+#### POST /search/relationships
+
+Searches for work units based on relationships.
+
+**Request Body**:
+```json
+{
+  "target_id": "string",         // ID of the target work unit
+  "relationship_types": [        // Optional array of relationship types to filter by
+    number
+  ],
+  "direction": "incoming|outgoing|both",  // Optional, defaults to "both"
+  "depth": number,               // Optional, defaults to 1
+  "limit": number,               // Optional, defaults to 100
+  "meta_filters": {              // Optional metadata filters for relationships
+    "key1": "value1"
+  }
+}
+```
+
+**Response**:
+- Status: `200 OK`
+- Body:
+```json
+{
+  "results": [
+    {
+      "work_unit": {
+        // Work unit object
+      },
+      "relationship": {
+        "type": number,
+        "meta": {
+          "key1": "value1"
+        },
+        "direction": "incoming|outgoing"
+      },
+      "distance": number  // Number of hops from the target
+    }
+  ],
+  "total_count": number
 }
 ```
 
@@ -468,17 +556,33 @@ All API endpoints return appropriate HTTP status codes:
 - `409 Conflict`: Resource conflict (e.g., lock already held)
 - `500 Internal Server Error`: Server error
 
-Error responses include a JSON object with an `error` field:
+Error responses include a JSON object with standardized fields:
 
 ```json
 {
-  "error": "Error message"
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message",
+    "details": {
+      // Optional additional context about the error
+    },
+    "trace_id": "123abc456def"  // OpenTelemetry trace ID for debugging
+  }
 }
 ```
 
+Common error codes:
+- `INVALID_REQUEST`: Request validation failed
+- `NOT_FOUND`: Resource not found
+- `ALREADY_EXISTS`: Resource already exists
+- `PERMISSION_DENIED`: Agent doesn't have permission
+- `RESOURCE_EXHAUSTED`: Rate limit exceeded
+- `UNAVAILABLE`: Service temporarily unavailable
+- `INTERNAL`: Internal server error
+
 ## Rate Limiting
 
-The API may apply rate limiting based on agent ID. If rate limited, the response will include:
+The API uses token bucket rate limiting based on agent ID. If rate limited, the response will include:
 
 - Status: `429 Too Many Requests`
 - Headers:
@@ -492,6 +596,14 @@ List endpoints return paginated results. To fetch additional pages:
 
 1. Include the `next_cursor` value from the previous response as the `cursor` query parameter
 2. If `next_cursor` is empty, there are no more results
+
+## Tracing and Observability
+
+Each request includes:
+
+- `X-Request-ID` header in responses for request identification
+- OpenTelemetry trace context propagation
+- Structured logs correlated with request traces
 
 ## Examples
 
@@ -527,6 +639,34 @@ curl -X POST http://localhost:8080/locks \
   }'
 ```
 
+### Semantic Search
+
+```bash
+curl -X POST http://localhost:8080/search/vector \
+  -H "Content-Type: application/json" \
+  -H "X-Agent-ID: example-agent" \
+  -d '{
+    "query": "What are the benefits of distributed tracing?",
+    "context_id": "ctx-123",
+    "limit": 5,
+    "min_similarity": 0.7
+  }'
+```
+
+### Relationship Search
+
+```bash
+curl -X POST http://localhost:8080/search/relationships \
+  -H "Content-Type: application/json" \
+  -H "X-Agent-ID: example-agent" \
+  -d '{
+    "target_id": "work-123",
+    "relationship_types": [2, 3],
+    "direction": "incoming",
+    "depth": 2
+  }'
+```
+
 ### Streaming Updates via WebSocket
 
 ```javascript
@@ -535,4 +675,14 @@ ws.onmessage = (event) => {
   const workUnit = JSON.parse(event.data);
   console.log("Received work unit:", workUnit);
 };
+```
+
+### Server-Sent Events
+
+```javascript
+const sse = new EventSource("http://localhost:8080/stream/sse?context=ctx-123");
+sse.addEventListener("workunit", (event) => {
+  const workUnit = JSON.parse(event.data);
+  console.log("Received work unit:", workUnit);
+});
 ```

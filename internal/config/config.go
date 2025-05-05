@@ -20,6 +20,7 @@ type Config struct {
 	Search    SearchConfig    `yaml:"search"`
 	Auth      AuthConfig      `yaml:"auth"`
 	Logging   LoggingConfig   `yaml:"logging"`
+	Telemetry TelemetryConfig `yaml:"telemetry"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
 }
@@ -44,6 +45,20 @@ type StorageConfig struct {
 	ContextCacheSize       int    `yaml:"context_cache_size"`
 	LockCacheSize          int    `yaml:"lock_cache_size"`
 	CacheExpirationSeconds int    `yaml:"cache_expiration_seconds"`
+	
+	// Storage implementation selection
+	StorageType            string `yaml:"storage_type"`
+	
+	// Optimized storage settings
+	OptimizedEnabled       bool   `yaml:"optimized_enabled"`
+	MemTableSize           int    `yaml:"mem_table_size"`
+	NumMemTables           int    `yaml:"num_mem_tables"`
+	NumLevelZeroTables     int    `yaml:"num_level_zero_tables"`
+	ValueLogFileSize       int    `yaml:"value_log_file_size"`
+	NumCompactors          int    `yaml:"num_compactors"`
+	GCIntervalMinutes      int    `yaml:"gc_interval_minutes"`
+	IndexCacheMB           int    `yaml:"index_cache_mb"`
+	BlockCacheMB           int    `yaml:"block_cache_mb"`
 }
 
 // RouterConfig contains event router settings
@@ -99,10 +114,20 @@ type AuthConfig struct {
 
 // LoggingConfig contains logging settings
 type LoggingConfig struct {
-	Level        string `yaml:"level"`
-	Format       string `yaml:"format"`
-	Tracing      bool   `yaml:"tracing"`
-	OtelEndpoint string `yaml:"otel_endpoint"`
+	Level           string            `yaml:"level"`
+	Format          string            `yaml:"format"`
+	IncludeCaller   bool              `yaml:"include_caller"`
+	IncludeTrace    bool              `yaml:"include_trace"`
+	GlobalFields    map[string]string `yaml:"global_fields"`
+}
+
+// TelemetryConfig contains OpenTelemetry settings
+type TelemetryConfig struct {
+	Enabled       bool              `yaml:"enabled"`
+	ServiceName   string            `yaml:"service_name"`
+	Endpoint      string            `yaml:"endpoint"`
+	SamplingRatio float64           `yaml:"sampling_ratio"`
+	Attributes    map[string]string `yaml:"attributes"`
 }
 
 // MetricsConfig contains metrics settings
@@ -140,6 +165,16 @@ func DefaultConfig() *Config {
 			ContextCacheSize:       1000,
 			LockCacheSize:          5000,
 			CacheExpirationSeconds: 30,
+			StorageType:            "badger",
+			OptimizedEnabled:       false,
+			MemTableSize:           64 * 1024 * 1024,      // 64MB
+			NumMemTables:           5,
+			NumLevelZeroTables:     10,
+			ValueLogFileSize:       1024 * 1024 * 1024,    // 1GB
+			NumCompactors:          4,
+			GCIntervalMinutes:      10,
+			IndexCacheMB:           100,
+			BlockCacheMB:           256,
 		},
 		Router: RouterConfig{
 			MaxBufferSize:   100,
@@ -177,10 +212,18 @@ func DefaultConfig() *Config {
 			AllowAnonymous:       false,
 		},
 		Logging: LoggingConfig{
-			Level:        "info",
-			Format:       "json",
-			Tracing:      false,
-			OtelEndpoint: "localhost:4317",
+			Level:         "info",
+			Format:        "json",
+			IncludeCaller: true,
+			IncludeTrace:  true,
+			GlobalFields:  map[string]string{},
+		},
+		Telemetry: TelemetryConfig{
+			Enabled:       false,
+			ServiceName:   "engram",
+			Endpoint:      "localhost:4317",
+			SamplingRatio: 0.1,
+			Attributes:    map[string]string{},
 		},
 		Metrics: MetricsConfig{
 			Enabled:  true,

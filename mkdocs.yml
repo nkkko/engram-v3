@@ -1,0 +1,36 @@
+site_name: "Engram v3 Documentation"
+docs_dir: "docs"
+site_url: "https://example.com/engram"
+repo_url: "https://github.com/your-org/engram-v3"
+repo_name: "engram-v3"
+
+theme:
+  name: "material"
+  language: "en"
+  palette:
+    scheme: "slate"
+  features:
+    - navigation.expand
+
+nav:
+  - "Home": "index.md"
+  - Overview:
+      - "Getting Started": "getting_started.md"
+      - "Architecture": "architecture.md"
+  - "Vector Search": "vector_search.md"
+  - "API": "api.md"
+  - "Deployment": "deployment.md"
+  - "Health Checks": "health_checks.md"
+  - "Lock Manager": "lock_manager.md"
+  - "Errors": "errors.md"
+  - "Badger Optimization": "badger_optimization.md"
+  - "OpenAPI Schema": "openapi.yaml"
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - footnotes
+  - codehilite:
+      guess_lang: false

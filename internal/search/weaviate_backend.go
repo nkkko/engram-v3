@@ -14,7 +14,7 @@ import (
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/auth"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/graphql"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate/models"
+	"github.com/weaviate/weaviate/entities/models"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -347,8 +347,8 @@ func (w *WeaviateBackend) Search(ctx context.Context, options SearchOptions) (*S
 	} else if options.Query != "" {
 		// Use regular text search
 		queryBuilder = queryBuilder.WithBM25(graphql.BM25Arguments{
-			Query:    options.Query,
-			Fields:   []string{"payload"},
+			Query:      options.Query,
+			Fields:     []string{"payload"},
 			Properties: []string{"payload"},
 		})
 	}

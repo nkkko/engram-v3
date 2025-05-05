@@ -3,6 +3,7 @@
 - Use JSON marshaling instead of protobuf marshaling (proto.Marshal)
 - Use ./test.sh for running tests with emoji indicators
 - Core tests (storage, search, lockmanager, router, API) are now working with Badger
+- Always update todo.md file after the work is done
 
 ## Component Architecture
 - Engine → Main coordinator

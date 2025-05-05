@@ -11,11 +11,15 @@ import (
 
 	"github.com/nkkko/engram-v3/internal/api"
 	"github.com/nkkko/engram-v3/internal/lockmanager"
+	"github.com/nkkko/engram-v3/internal/logging"
+	"github.com/nkkko/engram-v3/internal/metrics"
 	"github.com/nkkko/engram-v3/internal/notifier"
 	"github.com/nkkko/engram-v3/internal/router"
 	"github.com/nkkko/engram-v3/internal/search"
 	"github.com/nkkko/engram-v3/internal/storage"
 	"github.com/nkkko/engram-v3/internal/storage/badger"
+	"github.com/nkkko/engram-v3/internal/telemetry"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
@@ -60,16 +64,19 @@ func DefaultConfig() Config {
 
 // Engine is the main coordinator of all Engram components
 type Engine struct {
-	config     Config
-	storage    storage.Storage
-	router     *router.Router
-	notifier   *notifier.Notifier
-	lockMgr    *lockmanager.LockManager
-	search     *search.Engine
-	api        *api.API
-	shutdownCh chan struct{}
-	wg         sync.WaitGroup
-	logger     zerolog.Logger
+	config      Config
+	storage     storage.Storage
+	router      *router.Router
+	notifier    *notifier.Notifier
+	lockMgr     *lockmanager.LockManager
+	search      *search.Engine
+	api         *api.API
+	shutdownCh  chan struct{}
+	wg          sync.WaitGroup
+	logger      zerolog.Logger
+	metrics     *metrics.Metrics
+	telemetry   telemetry.Config
+	telemetryFn func(context.Context) error // Shutdown function for telemetry
 }
 
 // CreateEngine creates a new Engine instance with all components initialized from the config
@@ -177,6 +184,9 @@ func NewEngine(config Config, storage storage.Storage, router *router.Router, lo
 	zerolog.SetGlobalLevel(level)
 	logger := log.With().Str("component", "engine").Logger()
 
+	// Initialize metrics
+	metricsInstance := metrics.GetMetrics()
+
 	// Create engine with provided components
 	e := &Engine{
 		config:     config,
@@ -187,6 +197,7 @@ func NewEngine(config Config, storage storage.Storage, router *router.Router, lo
 		api:        api,
 		shutdownCh: make(chan struct{}),
 		logger:     logger,
+		metrics:    metricsInstance,
 	}
 
 	return e
@@ -195,6 +206,37 @@ func NewEngine(config Config, storage storage.Storage, router *router.Router, lo
 // Start initializes and runs all components
 func (e *Engine) Start(ctx context.Context) error {
 	e.logger.Info().Msg("Starting Engram engine")
+	
+	// Initialize structured logging
+	loggingConfig := logging.DefaultConfig()
+	loggingConfig.Level = logging.LevelInfo
+	if e.config.LogLevel == "debug" {
+		loggingConfig.Level = logging.LevelDebug
+	} else if e.config.LogLevel == "warn" {
+		loggingConfig.Level = logging.LevelWarn
+	} else if e.config.LogLevel == "error" {
+		loggingConfig.Level = logging.LevelError
+	}
+	
+	// Set up logging
+	if err := logging.Setup(loggingConfig); err != nil {
+		return fmt.Errorf("failed to set up logging: %w", err)
+	}
+	
+	// Initialize OpenTelemetry if enabled
+	telConfig := telemetry.DefaultConfig()
+	telConfig.Enabled = false // Set to true to enable telemetry
+	telConfig.ServiceName = "engram"
+	
+	// Set up telemetry
+	telShutdown, err := telemetry.Setup(ctx, telConfig)
+	if err != nil {
+		e.logger.Warn().Err(err).Msg("Failed to set up telemetry, continuing without it")
+	} else {
+		e.telemetryFn = telShutdown
+		e.telemetry = telConfig
+		e.logger.Info().Msg("Telemetry initialized successfully")
+	}
 
 	// Use the provided context or create a new one
 	if ctx == nil {
@@ -294,6 +336,15 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 	if err := e.storage.Shutdown(ctx); err != nil {
 		e.logger.Error().Err(err).Msg("Failed to shut down storage")
 		return err
+	}
+	
+	// Shut down telemetry if initialized
+	if e.telemetryFn != nil {
+		if err := e.telemetryFn(ctx); err != nil {
+			e.logger.Error().Err(err).Msg("Failed to shut down telemetry")
+		} else {
+			e.logger.Info().Msg("Telemetry shut down successfully")
+		}
 	}
 
 	return nil

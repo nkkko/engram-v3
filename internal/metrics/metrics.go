@@ -40,21 +40,27 @@ type Metrics struct {
 	LockContentionTotal   prometheus.Counter
 	LockAcquisitionDuration prometheus.Histogram
 	
-	// Router metrics
+	// Router metrics (basic, expanded in RouterMetrics)
 	RouterEventsTotal     *prometheus.CounterVec
 	RouterQueueSize       prometheus.Gauge
 	RouterEventDuration   prometheus.Histogram
+	
+	// Expanded router metrics
+	Router                *RouterMetrics
 	
 	// Notifier metrics
 	NotifierConnectionsActive prometheus.Gauge
 	NotifierEventsPublished   *prometheus.CounterVec
 	NotifierEventDelay        prometheus.Histogram
 	
-	// Search metrics
+	// Search metrics (basic, expanded in SearchMetrics)
 	SearchQueriesTotal    prometheus.Counter
 	SearchDuration        prometheus.Histogram
 	SearchResultsTotal    prometheus.Counter
 	SearchIndexSize       prometheus.Gauge
+	
+	// Expanded search metrics
+	Search                *SearchMetrics
 }
 
 // GetMetrics returns the metrics singleton
@@ -67,7 +73,11 @@ func GetMetrics() *Metrics {
 
 // newMetrics initializes and registers all metrics
 func newMetrics() *Metrics {
-	m := &Metrics{}
+	m := &Metrics{
+		// Initialize expanded metrics
+		Router: NewRouterMetrics(),
+		Search: NewSearchMetrics(),
+	}
 	
 	// API metrics
 	m.APIRequestsTotal = promauto.NewCounterVec(
